@@ -1,8 +1,7 @@
 import { CoreDependencies, Logger, Transport, TransportMessage } from "@node-ts/bus-core";
 import { ServiceBusMessage } from '@azure/service-bus'
-import { ServiceBusClient, ServiceBusSender, ServiceBusReceiver, ServiceBusReceivedMessage } from "@azure/service-bus"
+import { ServiceBusSender, ServiceBusReceiver, ServiceBusReceivedMessage } from "@azure/service-bus"
 import { Command, MessageAttributes, Event, Message } from "@node-ts/bus-messages";
-import uuid from "uuid";
 import { SBQTransportConfiguration } from "./azure-sbq-transport-configuration";
 
 export class SBQTransport implements Transport<ServiceBusMessage> {
@@ -74,7 +73,8 @@ export class SBQTransport implements Transport<ServiceBusMessage> {
     }
 
     const queueMessage = result[0]
-    const domainMessage = this.coreDependencies.messageSerializer.deserialize(queueMessage.body)
+    // By default @azure/service-bus can deserialize JSON string. For plain text it uses the buffer
+    const domainMessage = Buffer.isBuffer(queueMessage.body) ? queueMessage.body.toString() : queueMessage.body
 
     return {
       id: queueMessage.messageId?.toString(),
