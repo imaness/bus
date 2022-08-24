@@ -1,7 +1,7 @@
 {
   "name": "@imaness/bus-azure-service-bus-queue",
   "description": "An Azure Service Bus Queue transport adapter for @node-ts/bus-core.",
-  "version": "1.0.4",
+  "version": "1.2.4",
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

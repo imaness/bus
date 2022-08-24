@@ -1,31 +1,33 @@
-import { CoreDependencies, Logger, Transport, TransportMessage } from "@node-ts/bus-core";
+import { CoreDependencies, Logger, Transport, TransportMessage } from '@node-ts/bus-core'
 import { ServiceBusMessage } from '@azure/service-bus'
-import { ServiceBusSender, ServiceBusReceiver, ServiceBusReceivedMessage } from "@azure/service-bus"
-import { Command, MessageAttributes, Event, Message } from "@node-ts/bus-messages";
-import { SBQTransportConfiguration } from "./azure-sbq-transport-configuration";
+import { ServiceBusSender, ServiceBusReceiver, ServiceBusReceivedMessage } from '@azure/service-bus'
+import { Command, MessageAttributes, Event, Message, MessageAttributeMap } from '@node-ts/bus-messages'
+import { SBQTransportConfiguration } from './azure-sbq-transport-configuration'
 
+
+type AttributeType = 'attributes' | 'stickyAttributes'
 export class SBQTransport implements Transport<ServiceBusMessage> {
   private coreDependencies: CoreDependencies
   private logger: Logger
 
   /**
-   * 
+   *
    */
   private readonly queueSender: ServiceBusSender
   /**
-   * 
+   *
    */
   private readonly queueReceiver: ServiceBusReceiver
 
   /**
    * A Custom Transport that supports Azure Sevice Bus Queue as an adapter for returnMessage
-   * 
-   * @param serviceBusClient 
-   * @param queueName 
-   * @param maxWaitTimeInMs 
+   *
+   * @param serviceBusClient
+   * @param queueName
+   * @param maxWaitTimeInMs
    */
-  constructor(
-    private readonly sbqConfiguration: SBQTransportConfiguration,
+  constructor (
+    private readonly sbqConfiguration: SBQTransportConfiguration
   ) {
     this.queueReceiver = sbqConfiguration.serviceBusClient.createReceiver(sbqConfiguration.queueName, { receiveMode: 'peekLock' })
     this.queueSender = sbqConfiguration.serviceBusClient.createSender(sbqConfiguration.queueName)
@@ -73,6 +75,7 @@ export class SBQTransport implements Transport<ServiceBusMessage> {
     }
 
     const queueMessage = result[0]
+
     // By default @azure/service-bus can deserialize JSON string. For plain text it uses the buffer
     const domainMessage = Buffer.isBuffer(queueMessage.body) ? queueMessage.body.toString() : queueMessage.body
 
@@ -82,9 +85,8 @@ export class SBQTransport implements Transport<ServiceBusMessage> {
       domainMessage,
       attributes: {
         correlationId: queueMessage?.correlationId?.toString(),
-        // TODO: Implement attributes
-        attributes: {},
-        stickyAttributes: {}
+        attributes: (queueMessage.applicationProperties ) ? this.transformApplicationPropertiesToAttributes('attributes', queueMessage.applicationProperties) : { },
+        stickyAttributes: (queueMessage.applicationProperties ) ? this.transformApplicationPropertiesToAttributes('stickyAttributes', queueMessage.applicationProperties) : { }
       }
     }
 
@@ -101,19 +103,81 @@ export class SBQTransport implements Transport<ServiceBusMessage> {
   async initialize (): Promise<void> {
   }
 
+  private transformApplicationPropertiesToAttributes (
+    attributeType: AttributeType,
+    properties: ServiceBusMessage['applicationProperties']
+  ): MessageAttributes['attributes'] | MessageAttributes['stickyAttributes'] {
+    const transformedObject: MessageAttributes['attributes'] = {}
+    const keyPrefix = `${attributeType}-`
+
+    if (!properties) {
+      return {}
+    }
+
+    for (const [key, value] of Object.entries(properties)) {
+      let newValue: string | number | boolean | undefined
+
+      // Type casting here to make sure TS is happy
+      if (value === null) {
+        newValue = undefined
+      } else if (value instanceof Date) {
+        newValue = value.toISOString()
+      } else {
+        newValue = value
+      }
+
+      // For ApplicationProperties that are correctly tagged with either of the prefix attributes or stickyAttributes
+      if (key.startsWith(keyPrefix)) {
+        transformedObject[key.replace(keyPrefix, '')]  = newValue
+      // For those key that don't use the keyPrefix naming default it as attributes.
+      } else if (attributeType === 'attributes' && !key.startsWith('stickyAttributes-')) {
+        transformedObject[key] = newValue
+      }
+    }
+
+    return transformedObject
+  }
+
+  private transformAttributeToApplicationProperties(
+    attributeType: AttributeType,
+    attributes: MessageAttributes['attributes'] |  MessageAttributes['stickyAttributes'], 
+  ): ServiceBusMessage['applicationProperties'] {
+    const transformedObject: ServiceBusMessage['applicationProperties'] = {}
+    const keyPrefix = `${attributeType}-`
+
+    // Type casting here to make sure TS is happy
+    for (const [key, value] of Object.entries(attributes)) {
+      let newValue: number | boolean | string | Date | null
+
+      // No need to add correlationId to Application Properties
+      if (key === 'correlationId') {
+        continue
+      }
+ 
+      if (value === undefined) {
+        newValue = null 
+      } else {
+        newValue = value
+      }
+
+      transformedObject[`${keyPrefix}${key}`] = newValue
+    }
+    
+    return transformedObject
+  }
+
   private async publishMessage (
     message: Message,
     messageAttributes: MessageAttributes = { attributes: {}, stickyAttributes: {} }
   ): Promise<void> {
     const eventMessage: ServiceBusMessage = {
-      body: JSON.stringify(message),
+      body: message,
       correlationId: messageAttributes?.correlationId,
       subject: message.$name,
-      // TODO: Implement attributes
-      // applicationProperties: {
-      //   ...messageAttributes?.attributes,
-      //   ...messageAttributes?.stickyAttributes
-      // }
+      applicationProperties: { 
+        ...this.transformAttributeToApplicationProperties('attributes', messageAttributes.attributes),
+        ...this.transformAttributeToApplicationProperties('stickyAttributes', messageAttributes.stickyAttributes) 
+      }
     }
     await this.queueSender.sendMessages(eventMessage)
   }

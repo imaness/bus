@@ -36,3 +36,9 @@ const run = async () => {
 }
 run.catch(console.error)
 ```
+
+### Mapping of ApplicationProperties to Attributes and StickyAttributes
+
+Azure Service Bus Queue supports [Message Properties](https://docs.microsoft.com/en-us/rest/api/servicebus/message-headers-and-properties#message-properties). 
+
+In order for you to map it to Attributes or StickyAttributes you need to add key prefix of either `attributes` or `stickyAttributes`. Those key that are not have the said prefixes will be considered as `attributes`.

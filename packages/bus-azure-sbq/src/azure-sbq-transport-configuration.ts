@@ -2,7 +2,7 @@ import { ServiceBusClient } from '@azure/service-bus'
 import { TransportConfiguration } from '@node-ts/bus-core'
 export interface SBQTransportConfiguration extends TransportConfiguration {
   /**
-   * Service Bus client instance from @azure/servicebus. This sets the connection handshake to Service Bus. 
+   * Service Bus client instance from @azure/servicebus. This sets the connection handshake to Service Bus.
    */
   serviceBusClient: ServiceBusClient,
 
